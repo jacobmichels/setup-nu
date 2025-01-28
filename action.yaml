@@ -32,6 +32,10 @@ inputs:
     default: false
     required: false
     description: 'Enable registering of plugins'
+  lib-dirs:
+    default: ''
+    required: false
+    description: 'Comma separated relative directory paths to search for nu modules'
   github-token:
     description: 'GitHub token or PAT token'
     required: false

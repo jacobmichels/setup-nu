@@ -18,6 +18,7 @@ async function main() {
     const enablePlugins = (core.getInput('enable-plugins') || 'false').toLowerCase();
     const features = core.getInput('features') || 'default';
     const githubToken = core.getInput('github-token');
+    const libDirs = core.getInput('lib-dirs');
     const version = ['*', 'nightly'].includes(versionSpec) ? versionSpec : semver.valid(semver.coerce(versionSpec));
     console.log(`coerce version: ${version}`);
     const ver = version === null ? undefined : version;
@@ -36,6 +37,23 @@ async function main() {
       name: version === 'nightly' ? 'nightly' : 'nushell',
     });
     core.addPath(tool.dir);
+    // Add the lib dirs to NU_LIB_DIRS environment variable.
+    if (libDirs) {
+      const dirs = libDirs.split(',').map((dir) => dir.trim());
+      const validDirs = [];
+      for (const dir of dirs) {
+        if (!shell.test('-d', dir)) {
+          core.warning(`Directory does not exist: ${dir}`);
+          continue;
+        }
+        validDirs.push(`${shell.pwd()}/${dir}`);
+      }
+      if (validDirs.length > 0) {
+        const nuLibDirs = process.platform === 'win32' ? validDirs.join(';') : validDirs.join(':');
+        core.exportVariable('NU_LIB_DIRS', nuLibDirs);
+        core.info(`Setting NU_LIB_DIRS as: ${nuLibDirs}`);
+      }
+    }
     // version: * --> 0.95.0; nightly --> nightly-56ed69a; 0.95 --> 0.95.0
     core.info(`Successfully setup Nu ${tool.version}, with ${features} features.`);
 

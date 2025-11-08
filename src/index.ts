@@ -18,6 +18,7 @@ async function main() {
     const enablePlugins = (core.getInput('enable-plugins') || 'false').toLowerCase();
     const features = core.getInput('features') || 'default';
     const githubToken = core.getInput('github-token');
+    const releaseSha = core.getInput('release-sha') || undefined;
     const version = ['*', 'nightly'].includes(versionSpec) ? versionSpec : semver.valid(semver.coerce(versionSpec));
     console.log(`coerce version: ${version}`);
     const ver = version === null ? undefined : version;
@@ -29,6 +30,7 @@ async function main() {
       checkLatest,
       githubToken,
       enablePlugins,
+      releaseSha,
       bin: 'nu',
       owner: 'nushell',
       versionSpec: ver,
@@ -37,7 +39,8 @@ async function main() {
     });
     core.addPath(tool.dir);
     // version: * --> 0.95.0; nightly --> nightly-56ed69a; 0.95 --> 0.95.0
-    core.info(`Successfully setup Nu ${tool.version}, with ${features} features.`);
+    const shaMessage = releaseSha ? ` (SHA verified: ${releaseSha})` : '';
+    core.info(`Successfully setup Nu ${tool.version}, with ${features} features.${shaMessage}`);
 
     // Change to workspace directory so that the register-plugins.nu script can be found.
     shell.cd(process.env.GITHUB_WORKSPACE);

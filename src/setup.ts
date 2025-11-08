@@ -79,6 +79,8 @@ export interface Tool {
   enablePlugins: string;
   /** A valid semantic version specifier for the tool. */
   versionSpec?: string;
+  /** Optional release SHA to verify the release matches the expected commit. */
+  releaseSha?: string;
   /** Feature set: default or full. */
   features: 'default' | 'full';
   /** The name of the tool binary (defaults to the repo name) */
@@ -202,6 +204,53 @@ function filterLatestNightly(response: any, features: 'default' | 'full'): Relea
 }
 
 /**
+ * Check if a string is a valid full git commit hash (40 characters)
+ */
+function isCommitHash(str: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(str);
+}
+
+/**
+ * Verify that a release tag matches the expected commit SHA
+ */
+async function verifyReleaseSha(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  tagName: string,
+  expectedSha: string
+): Promise<void> {
+  core.info(`Verifying release tag ${tagName} matches commit SHA ${expectedSha}`);
+
+  try {
+    // Get the release by tag name
+    const { data: release } = await octokit.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag: tagName,
+    });
+
+    // Get the commit SHA from the target_commitish field
+    const commitSha = release.target_commitish;
+
+    // Compare the full commit SHAs
+    if (commitSha !== expectedSha) {
+      throw new Error(
+        `Release SHA verification failed! Expected ${expectedSha} but got ${commitSha}. ` +
+          `This may indicate a supply chain security issue or the release was updated.`
+      );
+    }
+
+    core.info(`✓ Release SHA verified: ${commitSha}`);
+  } catch (error) {
+    if (error.message && error.message.includes('verification failed')) {
+      throw error;
+    }
+    throw new Error(`Failed to verify release SHA: ${error.message}`);
+  }
+}
+
+/**
  * Fetch the latest matching release for the given tool.
  *
  * @param tool the tool to fetch a release for.
@@ -209,11 +258,16 @@ function filterLatestNightly(response: any, features: 'default' | 'full'): Relea
  * @returns {Promise<Release>} a single GitHub release.
  */
 async function getRelease(tool: Tool): Promise<Release> {
-  const { owner, name, versionSpec, checkLatest = false, features = 'default' } = tool;
+  const { owner, name, versionSpec, checkLatest = false, features = 'default', releaseSha } = tool;
   const isNightly = versionSpec === 'nightly';
 
   // Use public GitHub API for Nushell assets query, make it work for GitHub Enterprise
   const octokit = new Octokit({ auth: tool.githubToken, baseUrl: 'https://api.github.com' });
+
+  // Validate releaseSha if provided
+  if (releaseSha && !isCommitHash(releaseSha)) {
+    throw new Error(`Invalid release-sha format: ${releaseSha}. Must be a 40 character hex string.`);
+  }
 
   return octokit
     .paginate(octokit.repos.listReleases, { owner, repo: name }, (response, done) => {
@@ -228,7 +282,7 @@ async function getRelease(tool: Tool): Promise<Release> {
       }
       return releases;
     })
-    .then((releases) => {
+    .then(async (releases) => {
       const release = releases.find((release) => release != null);
       if (release === undefined) {
         if (features === 'full') {
@@ -236,6 +290,13 @@ async function getRelease(tool: Tool): Promise<Release> {
         }
         throw new Error(`No release for Nushell matching version specifier ${versionSpec} of ${features} feature.`);
       }
+
+      // If releaseSha is provided, verify the release matches the expected commit
+      if (releaseSha) {
+        const tagName = release.version.startsWith('nightly-') ? release.version : `v${release.version}`;
+        await verifyReleaseSha(octokit, owner, name, tagName, releaseSha);
+      }
+
       return release;
     });
 }

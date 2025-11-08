@@ -20,6 +20,9 @@ inputs:
     default: '*'
     required: false
     description: 'A valid semver specifier of nushell version to install.'
+  release-sha:
+    required: false
+    description: 'Optional full git commit SHA (40 characters) to verify the release matches the expected commit.'
   features:
     default: 'default'
     required: false

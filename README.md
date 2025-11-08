@@ -144,6 +144,19 @@ They aren't perfect yet, but they do work. By the way, if you discover a better 
 > which may disrupt your workflow. Only the latest nightly version will be downloaded and set up,
 > and the version requirement is `nightly`.
 
+#### Verify Release with SHA
+
+You can optionally verify that a release matches a specific commit SHA:
+
+```yaml
+- uses: hustcer/setup-nu@v3
+  with:
+    version: "0.108.0"
+    release-sha: "56ed69afc06da2c3f9c12bf95c907854654fab93"
+- run: version
+  shell: nu {0}
+```
+
 #### Others
 
 Or, check the following examples:
@@ -169,6 +182,7 @@ following command installs the latest version:
 | Name             | Type   | Description    |
 | ---------------- | ------ | -------------- |
 | `version`        | `string` | Optional, A valid NPM-style semver specification, such as `0.86.0`, etc. and `nightly`. Default `*`        |
+| `release-sha`    | `string` | Optional, Full git commit SHA (40 characters) to verify the release matches the expected commit. Useful for supply chain security and reproducibility. |
 | `check-latest`   | `bool`   | Optional, Set to `true` if you want to use the latest version, default `false`   |
 | `enable-plugins` | `bool \| string`  | Optional, Set to `true` if you want to register the bundled plugins or a comma-separated string of plugin names like `nu_plugin_polars,nu_plugin_query`, Nu v0.86 and above is required, default `false` |
 | `features`       | `string` | Optional, Available choice: `default` or `full`, and the `full` features will include the commands from `extra` and `dataframe`. `full` can be used for `Nu` from `v0.86` to `v0.93` and was removed after `v0.93.1`, default: `default` |

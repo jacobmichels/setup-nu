@@ -57426,6 +57426,7 @@ function main() {
             const enablePlugins = (core.getInput('enable-plugins') || 'false').toLowerCase();
             const features = core.getInput('features') || 'default';
             const githubToken = core.getInput('github-token');
+            const releaseSha = core.getInput('release-sha') || undefined;
             const version = ['*', 'nightly'].includes(versionSpec) ? versionSpec : semver_1.default.valid(semver_1.default.coerce(versionSpec));
             console.log(`coerce version: ${version}`);
             const ver = version === null ? undefined : version;
@@ -57436,6 +57437,7 @@ function main() {
                 checkLatest,
                 githubToken,
                 enablePlugins,
+                releaseSha,
                 bin: 'nu',
                 owner: 'nushell',
                 versionSpec: ver,
@@ -57444,7 +57446,8 @@ function main() {
             });
             core.addPath(tool.dir);
             // version: * --> 0.95.0; nightly --> nightly-56ed69a; 0.95 --> 0.95.0
-            core.info(`Successfully setup Nu ${tool.version}, with ${features} features.`);
+            const shaMessage = releaseSha ? ` (SHA verified: ${releaseSha})` : '';
+            core.info(`Successfully setup Nu ${tool.version}, with ${features} features.${shaMessage}`);
             // Change to workspace directory so that the register-plugins.nu script can be found.
             shelljs_1.default.cd(process.env.GITHUB_WORKSPACE);
             console.log(`Current directory: ${process.cwd()}`);
@@ -57755,6 +57758,42 @@ function filterLatestNightly(response, features) {
     }));
 }
 /**
+ * Check if a string is a valid full git commit hash (40 characters)
+ */
+function isCommitHash(str) {
+    return /^[0-9a-f]{40}$/i.test(str);
+}
+/**
+ * Verify that a release tag matches the expected commit SHA
+ */
+function verifyReleaseSha(octokit, owner, repo, tagName, expectedSha) {
+    return __awaiter(this, void 0, void 0, function* () {
+        core.info(`Verifying release tag ${tagName} matches commit SHA ${expectedSha}`);
+        try {
+            // Get the release by tag name
+            const { data: release } = yield octokit.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: tagName,
+            });
+            // Get the commit SHA from the target_commitish field
+            const commitSha = release.target_commitish;
+            // Compare the full commit SHAs
+            if (commitSha !== expectedSha) {
+                throw new Error(`Release SHA verification failed! Expected ${expectedSha} but got ${commitSha}. ` +
+                    `This may indicate a supply chain security issue or the release was updated.`);
+            }
+            core.info(`✓ Release SHA verified: ${commitSha}`);
+        }
+        catch (error) {
+            if (error.message && error.message.includes('verification failed')) {
+                throw error;
+            }
+            throw new Error(`Failed to verify release SHA: ${error.message}`);
+        }
+    });
+}
+/**
  * Fetch the latest matching release for the given tool.
  *
  * @param tool the tool to fetch a release for.
@@ -57763,10 +57802,14 @@ function filterLatestNightly(response, features) {
  */
 function getRelease(tool) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { owner, name, versionSpec, checkLatest = false, features = 'default' } = tool;
+        const { owner, name, versionSpec, checkLatest = false, features = 'default', releaseSha } = tool;
         const isNightly = versionSpec === 'nightly';
         // Use public GitHub API for Nushell assets query, make it work for GitHub Enterprise
         const octokit = new rest_1.Octokit({ auth: tool.githubToken, baseUrl: 'https://api.github.com' });
+        // Validate releaseSha if provided
+        if (releaseSha && !isCommitHash(releaseSha)) {
+            throw new Error(`Invalid release-sha format: ${releaseSha}. Must be a 40 character hex string.`);
+        }
         return octokit
             .paginate(octokit.repos.listReleases, { owner, repo: name }, (response, done) => {
             const nightlyReleases = isNightly ? filterLatestNightly(response, features) : [];
@@ -57779,7 +57822,7 @@ function getRelease(tool) {
             }
             return releases;
         })
-            .then((releases) => {
+            .then((releases) => __awaiter(this, void 0, void 0, function* () {
             const release = releases.find((release) => release != null);
             if (release === undefined) {
                 if (features === 'full') {
@@ -57787,8 +57830,13 @@ function getRelease(tool) {
                 }
                 throw new Error(`No release for Nushell matching version specifier ${versionSpec} of ${features} feature.`);
             }
+            // If releaseSha is provided, verify the release matches the expected commit
+            if (releaseSha) {
+                const tagName = release.version.startsWith('nightly-') ? release.version : `v${release.version}`;
+                yield verifyReleaseSha(octokit, owner, name, tagName, releaseSha);
+            }
             return release;
-        });
+        }));
     });
 }
 function handleBadBinaryPermissions(tool, dir) {
